@@ -1,0 +1,43 @@
+name: Demo variable propagation
+run-name: Demo propagation for ${{ inputs.environment }}
+
+# This is the caller. It mirrors how oracle-igs-fndload.yml calls its reusable
+# pipeline. It takes the environment as an input, passes that input plus a sample
+# input down to the reusable workflow with "with", and forwards every secret it
+# can see with "secrets: inherit".
+#
+# Important rule being demonstrated: a job that uses a reusable workflow cannot
+# itself declare "environment:". The environment is declared inside the reusable
+# workflow instead. That is why this caller has no environment block.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to resolve scoped variables and secrets against
+        type: choice
+        required: true
+        options:
+          - dev
+          - uat
+          - prod
+      sample_input:
+        description: Any text. Shows how an input travels from caller to reusable workflow.
+        type: string
+        required: false
+        default: hello
+
+permissions:
+  contents: read
+
+jobs:
+  call:
+    uses: ./.github/workflows/_demo-var-propagation-reusable.yml
+    with:
+      environment: ${{ inputs.environment }}
+      sample_input: ${{ inputs.sample_input }}
+    # "inherit" forwards the caller's repository and organisation secrets to the
+    # reusable workflow. Environment secrets are not forwarded here. They are
+    # resolved inside the reusable workflow by the job that declares the
+    # environment, which is exactly what the second job below demonstrates.
+    secrets: inherit

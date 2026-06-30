@@ -1,0 +1,107 @@
+name: Demo variable propagation (reusable)
+
+# This is the reusable workflow. It has two jobs that are deliberately identical
+# except for one line: the second job declares "environment:". Comparing their
+# two summary tables shows the whole propagation and precedence model.
+#
+#   no_environment   : sees repository variables and repository secrets only.
+#   with_environment : also sees the environment's variables and secrets, and
+#                      those shadow repository values that share the same name.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+      sample_input:
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  no_environment:
+    name: Job without an environment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show what resolves without an environment
+        # Values are passed through the environment block rather than being
+        # interpolated straight into the script, which is the safe pattern.
+        env:
+          IN_ENV: ${{ inputs.environment }}
+          IN_SAMPLE: ${{ inputs.sample_input }}
+          REPO_VAR: ${{ vars.DEMO_REPO_VAR }}
+          ENV_VAR: ${{ vars.DEMO_ENV_VAR }}
+          SHARED_VAR: ${{ vars.DEMO_SHARED_VAR }}
+          ENV_SECRET: ${{ secrets.DEMO_ENV_SECRET }}
+        run: |
+          set -euo pipefail
+
+          # Never print a secret value. Report only whether it resolved.
+          if [ -n "${ENV_SECRET}" ]; then SECRET_STATE="set"; else SECRET_STATE="not set"; fi
+
+          echo "Selected environment input : ${IN_ENV}"
+          echo "Sample input (from caller) : ${IN_SAMPLE}"
+          echo "DEMO_REPO_VAR              : ${REPO_VAR}"
+          echo "DEMO_ENV_VAR               : ${ENV_VAR}"
+          echo "DEMO_SHARED_VAR            : ${SHARED_VAR}"
+          echo "DEMO_ENV_SECRET            : ${SECRET_STATE}"
+
+          {
+            echo "## Job without an environment"
+            echo ""
+            echo "No \`environment:\` is declared, so this job reaches repository scope only."
+            echo ""
+            echo "| Name | Where it is defined | Value seen here |"
+            echo "| --- | --- | --- |"
+            echo "| sample_input | caller input, via \`with\` | ${IN_SAMPLE:-(empty)} |"
+            echo "| DEMO_REPO_VAR | repository variable | ${REPO_VAR:-(empty)} |"
+            echo "| DEMO_ENV_VAR | environment variable | ${ENV_VAR:-(empty, not visible without an environment)} |"
+            echo "| DEMO_SHARED_VAR | repository and environment | ${SHARED_VAR:-(empty)} |"
+            echo "| DEMO_ENV_SECRET | environment secret | ${SECRET_STATE} |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  with_environment:
+    name: Job bound to an environment
+    runs-on: ubuntu-latest
+    # This single line is the entire difference. Declaring the environment makes
+    # the environment's variables and secrets resolve, and applies any protection
+    # rules on that environment (for example a required reviewer will pause here).
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Show what resolves with an environment
+        env:
+          IN_ENV: ${{ inputs.environment }}
+          IN_SAMPLE: ${{ inputs.sample_input }}
+          REPO_VAR: ${{ vars.DEMO_REPO_VAR }}
+          ENV_VAR: ${{ vars.DEMO_ENV_VAR }}
+          SHARED_VAR: ${{ vars.DEMO_SHARED_VAR }}
+          ENV_SECRET: ${{ secrets.DEMO_ENV_SECRET }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "${ENV_SECRET}" ]; then SECRET_STATE="set"; else SECRET_STATE="not set"; fi
+
+          echo "Selected environment input : ${IN_ENV}"
+          echo "Sample input (from caller) : ${IN_SAMPLE}"
+          echo "DEMO_REPO_VAR              : ${REPO_VAR}"
+          echo "DEMO_ENV_VAR               : ${ENV_VAR}"
+          echo "DEMO_SHARED_VAR            : ${SHARED_VAR}"
+          echo "DEMO_ENV_SECRET            : ${SECRET_STATE}"
+
+          {
+            echo "## Job bound to the ${IN_ENV} environment"
+            echo ""
+            echo "\`environment: ${IN_ENV}\` is declared, so environment variables and secrets are now visible. Where a name exists at both levels, the environment value wins."
+            echo ""
+            echo "| Name | Where it is defined | Value seen here |"
+            echo "| --- | --- | --- |"
+            echo "| sample_input | caller input, via \`with\` | ${IN_SAMPLE:-(empty)} |"
+            echo "| DEMO_REPO_VAR | repository variable | ${REPO_VAR:-(empty)} |"
+            echo "| DEMO_ENV_VAR | environment variable | ${ENV_VAR:-(empty, is it set on this environment?)} |"
+            echo "| DEMO_SHARED_VAR | repository and environment | ${SHARED_VAR:-(empty)} |"
+            echo "| DEMO_ENV_SECRET | environment secret | ${SECRET_STATE} |"
+          } >> "${GITHUB_STEP_SUMMARY}"
